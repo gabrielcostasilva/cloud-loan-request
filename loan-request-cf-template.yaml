@@ -1,0 +1,358 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Metadata:
+    Generator: "former2"
+Description: ""
+Resources:
+    DynamoDBTable:
+        Type: "AWS::DynamoDB::Table"
+        Properties:
+            AttributeDefinitions: 
+              - 
+                AttributeName: "id"
+                AttributeType: "S"
+            BillingMode: "PAY_PER_REQUEST"
+            TableName: "loan-requests"
+            KeySchema: 
+              - 
+                AttributeName: "id"
+                KeyType: "HASH"
+
+    ApiGatewayRestApi:
+        Type: "AWS::ApiGateway::RestApi"
+        Properties:
+            Name: "LoanRequestAPI"
+            ApiKeySourceType: "HEADER"
+            EndpointConfiguration: 
+                Types: 
+                  - "REGIONAL"
+
+    ApiGatewayResource:
+        Type: "AWS::ApiGateway::Resource"
+        Properties:
+            RestApiId: !Ref ApiGatewayRestApi
+            PathPart: "reject"
+            ParentId: !GetAtt ApiGatewayRestApi.RootResourceId
+
+    ApiGatewayResource2:
+        Type: "AWS::ApiGateway::Resource"
+        Properties:
+            RestApiId: !Ref ApiGatewayRestApi
+            PathPart: "accept"
+            ParentId: !GetAtt ApiGatewayRestApi.RootResourceId
+
+    ApiGatewayResource3:
+        Type: "AWS::ApiGateway::Resource"
+        Properties:
+            RestApiId: !Ref ApiGatewayRestApi
+            PathPart: "loan"
+            ParentId: !GetAtt ApiGatewayRestApi.RootResourceId
+
+    ApiGatewayMethod:
+        Type: "AWS::ApiGateway::Method"
+        Properties:
+            RestApiId: !Ref ApiGatewayRestApi
+            ResourceId: !Ref ApiGatewayResource
+            HttpMethod: "POST"
+            AuthorizationType: "NONE"
+            ApiKeyRequired: false
+            RequestParameters: {}
+            MethodResponses: 
+              - 
+                ResponseModels: 
+                    "application/json": "Empty"
+                StatusCode: "200"
+            Integration: 
+                CacheNamespace: !Ref ApiGatewayResource
+                Credentials: !GetAtt IAMRole.Arn
+                IntegrationHttpMethod: "POST"
+                IntegrationResponses: 
+                  - 
+                    ResponseTemplates: {}
+                    StatusCode: "200"
+                PassthroughBehavior: "WHEN_NO_TEMPLATES"
+                RequestTemplates: 
+                    "application/json": |
+                        {
+                            "output": "{\"status\": false}",
+                            "taskToken": $input.json('$.token')
+                        }
+                TimeoutInMillis: 29000
+                Type: "AWS"
+                Uri: !Sub "arn:aws:apigateway:${AWS::Region}:states:action/SendTaskSuccess"
+
+    ApiGatewayMethod2:
+        Type: "AWS::ApiGateway::Method"
+        Properties:
+            RestApiId: !Ref ApiGatewayRestApi
+            ResourceId: !Ref ApiGatewayResource2
+            HttpMethod: "POST"
+            AuthorizationType: "NONE"
+            ApiKeyRequired: false
+            RequestParameters: {}
+            MethodResponses: 
+              - 
+                ResponseModels: 
+                    "application/json": "Empty"
+                StatusCode: "200"
+            Integration: 
+                CacheNamespace: !Ref ApiGatewayResource2
+                Credentials: !GetAtt IAMRole.Arn
+                IntegrationHttpMethod: "POST"
+                IntegrationResponses: 
+                  - 
+                    ResponseTemplates: {}
+                    StatusCode: "200"
+                PassthroughBehavior: "WHEN_NO_TEMPLATES"
+                RequestTemplates: 
+                    "application/json": |
+                        {
+                           "output": "{\"status\": true, \"amount\": $input.json('$.amount')}",
+                           "taskToken": $input.json('$.token')
+                        }
+                TimeoutInMillis: 29000
+                Type: "AWS"
+                Uri: !Sub "arn:aws:apigateway:${AWS::Region}:states:action/SendTaskSuccess"
+
+    ApiGatewayMethod3:
+        Type: "AWS::ApiGateway::Method"
+        Properties:
+            RestApiId: !Ref ApiGatewayRestApi
+            ResourceId: !Ref ApiGatewayResource3
+            HttpMethod: "POST"
+            AuthorizationType: "NONE"
+            ApiKeyRequired: false
+            RequestParameters: {}
+            MethodResponses: 
+              - 
+                ResponseModels: 
+                    "application/json": "Empty"
+                StatusCode: "200"
+            Integration: 
+                CacheNamespace: !Ref ApiGatewayResource3
+                Credentials: !GetAtt IAMRole2.Arn
+                IntegrationHttpMethod: "POST"
+                IntegrationResponses: 
+                  - 
+                    ResponseTemplates: {}
+                    StatusCode: "200"
+                PassthroughBehavior: "WHEN_NO_TEMPLATES"
+                RequestTemplates: 
+                    "application/json": !Sub |
+                        {
+                           "input": "$util.escapeJavaScript($input.json('$'))",
+                           "stateMachineArn": "${StepFunctionsStateMachine}"
+                        }
+                TimeoutInMillis: 29000
+                Type: "AWS"
+                Uri: !Sub "arn:aws:apigateway:${AWS::Region}:states:action/StartExecution"
+
+    IAMRole:
+        Type: "AWS::IAM::Role"
+        Properties:
+            Path: "/"
+            RoleName: !Sub "AllowSendTaskSuccess-${AWS::Region}"
+            AssumeRolePolicyDocument: "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"\",\"Effect\":\"Allow\",\"Principal\":{\"Service\":\"apigateway.amazonaws.com\"},\"Action\":\"sts:AssumeRole\"}]}"
+            MaxSessionDuration: 3600
+            ManagedPolicyArns: 
+              - "arn:aws:iam::aws:policy/service-role/AmazonAPIGatewayPushToCloudWatchLogs"
+              - "arn:aws:iam::aws:policy/AWSStepFunctionsFullAccess"
+            Description: "Allows API Gateway to push logs to CloudWatch Logs."
+
+    IAMRole2:
+        Type: "AWS::IAM::Role"
+        Properties:
+            Path: "/"
+            RoleName: !Sub "AllowStartingLoanRequestExecution-${AWS::Region}"
+            AssumeRolePolicyDocument: "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"\",\"Effect\":\"Allow\",\"Principal\":{\"Service\":\"apigateway.amazonaws.com\"},\"Action\":\"sts:AssumeRole\"}]}"
+            MaxSessionDuration: 3600
+            ManagedPolicyArns: 
+              - "arn:aws:iam::aws:policy/service-role/AmazonAPIGatewayPushToCloudWatchLogs"
+              - "arn:aws:iam::aws:policy/AWSStepFunctionsFullAccess"
+            Description: "Allows API Gateway to push logs to CloudWatch Logs."
+
+    StepFunctionsStateMachine:
+        Type: "AWS::StepFunctions::StateMachine"
+        Properties:
+            StateMachineName: "LoanRequestProcessor"
+            DefinitionString: !Sub |
+                {
+                  "Comment": "A description of my state machine",
+                  "StartAt": "Amount > 5000",
+                  "States": {
+                    "Amount > 5000": {
+                      "Type": "Choice",
+                      "Choices": [
+                        {
+                          "Variable": "$.amount",
+                          "NumericGreaterThan": 5000,
+                          "Next": "Credit Analysis"
+                        }
+                      ],
+                      "Default": "RegisterRequest"
+                    },
+                    "Credit Analysis": {
+                      "Type": "Task",
+                      "Resource": "arn:aws:states:::sns:publish.waitForTaskToken",
+                      "Parameters": {
+                        "TopicArn": "${SNSTopic}",
+                        "Message": {
+                          "amount-requested.$": "$.amount",
+                          "taskToken.$": "$$.Task.Token"
+                        }
+                      },
+                      "Next": "Approved?"
+                    },
+                    "Approved?": {
+                      "Type": "Choice",
+                      "Choices": [
+                        {
+                          "Variable": "$.status",
+                          "BooleanEquals": true,
+                          "Next": "RegisterRequest"
+                        }
+                      ],
+                      "Default": "SNS Publish"
+                    },
+                    "SNS Publish": {
+                      "Type": "Task",
+                      "Resource": "arn:aws:states:::sns:publish",
+                      "Parameters": {
+                        "TopicArn": "${SNSTopic2}",
+                        "Message": {
+                          "message": "We are sorry to inform that your request is denied!"
+                        }
+                      },
+                      "End": true
+                    },
+                    "RegisterRequest": {
+                      "Type": "Task",
+                      "Resource": "arn:aws:states:::dynamodb:putItem",
+                      "Parameters": {
+                        "TableName": "${DynamoDBTable}",
+                        "Item": {
+                          "id": {
+                            "S.$": "$$.Execution.Id"
+                          },
+                          "amount": {
+                            "N.$": "States.Format('{}', $.amount)"
+                          }
+                        }
+                      },
+                      "End": true
+                    }
+                  }
+                }
+            RoleArn: !GetAtt IAMStepFunctionsRole.Arn
+            StateMachineType: "STANDARD"
+            LoggingConfiguration: 
+                IncludeExecutionData: false
+                Level: "OFF"
+
+    SNSTopic:
+        Type: "AWS::SNS::Topic"
+        Properties:
+            DisplayName: ""
+            TopicName: "sendkey"
+
+    SNSTopic2:
+        Type: "AWS::SNS::Topic"
+        Properties:
+            DisplayName: ""
+            TopicName: "warning"
+
+    SNSTopicPolicy:
+        Type: "AWS::SNS::TopicPolicy"
+        Properties:
+            PolicyDocument: !Sub "{\"Version\":\"2008-10-17\",\"Id\":\"__default_policy_ID\",\"Statement\":[{\"Sid\":\"__default_statement_ID\",\"Effect\":\"Allow\",\"Principal\":{\"AWS\":\"*\"},\"Action\":[\"SNS:GetTopicAttributes\",\"SNS:SetTopicAttributes\",\"SNS:AddPermission\",\"SNS:RemovePermission\",\"SNS:DeleteTopic\",\"SNS:Subscribe\",\"SNS:ListSubscriptionsByTopic\",\"SNS:Publish\"],\"Resource\":\"${SNSTopic}\",\"Condition\":{\"StringEquals\":{\"AWS:SourceOwner\":\"${AWS::AccountId}\"}}}]}"
+            Topics: 
+              - !Ref SNSTopic
+
+    SNSTopicPolicy2:
+        Type: "AWS::SNS::TopicPolicy"
+        Properties:
+            PolicyDocument: !Sub "{\"Version\":\"2008-10-17\",\"Id\":\"__default_policy_ID\",\"Statement\":[{\"Sid\":\"__default_statement_ID\",\"Effect\":\"Allow\",\"Principal\":{\"AWS\":\"*\"},\"Action\":[\"SNS:GetTopicAttributes\",\"SNS:SetTopicAttributes\",\"SNS:AddPermission\",\"SNS:RemovePermission\",\"SNS:DeleteTopic\",\"SNS:Subscribe\",\"SNS:ListSubscriptionsByTopic\",\"SNS:Publish\"],\"Resource\":\"${SNSTopic2}\",\"Condition\":{\"StringEquals\":{\"AWS:SourceOwner\":\"${AWS::AccountId}\"}}}]}"
+            Topics: 
+              - !Ref SNSTopic2
+
+    IAMStepFunctionsRole:
+        Type: "AWS::IAM::Role"
+        Properties:
+            Path: "/service-role/"
+            RoleName: !Sub "StepFunctions-LoanRequestProcessor-role-${AWS::Region}"
+            AssumeRolePolicyDocument: "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Principal\":{\"Service\":\"states.amazonaws.com\"},\"Action\":\"sts:AssumeRole\"}]}"
+            MaxSessionDuration: 3600
+            ManagedPolicyArns: 
+              - !Ref IAMManagedPolicy3
+              - !Ref IAMManagedPolicy
+              - !Ref IAMManagedPolicy2
+
+    IAMManagedPolicy:
+        Type: "AWS::IAM::ManagedPolicy"
+        Properties:
+            ManagedPolicyName: !Sub "XRayAccessPolicy-${AWS::Region}-e9d36d5f-ff7e-4ccf-8c22-b7052c4b3243"
+            Path: "/service-role/"
+            PolicyDocument: |
+                {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Action": [
+                                "xray:PutTraceSegments",
+                                "xray:PutTelemetryRecords",
+                                "xray:GetSamplingRules",
+                                "xray:GetSamplingTargets"
+                            ],
+                            "Resource": [
+                                "*"
+                            ]
+                        }
+                    ]
+                }
+
+    IAMManagedPolicy2:
+        Type: "AWS::IAM::ManagedPolicy"
+        Properties:
+            ManagedPolicyName: !Sub "SnsPublishScopedAccessPolicy-${AWS::Region}-8bfcf85c-3f62-44fe-b9cb-2297728a18d7"
+            Path: "/service-role/"
+            PolicyDocument: !Sub |
+                {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Action": [
+                                "sns:Publish"
+                            ],
+                            "Resource": [
+                                "arn:aws:sns:*:${AWS::AccountId}:sendkey",
+                                "arn:aws:sns:*:${AWS::AccountId}:warning"
+                            ]
+                        }
+                    ]
+                }
+
+    IAMManagedPolicy3:
+        Type: "AWS::IAM::ManagedPolicy"
+        Properties:
+            ManagedPolicyName: !Sub "DynamoDBTableContentScopedAccessPolicy-${AWS::Region}-7c26dfee-2d99-44f4-90a1-76dc264ba660"
+            Path: "/service-role/"
+            PolicyDocument: !Sub |
+                {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Action": [
+                                "dynamodb:GetItem",
+                                "dynamodb:PutItem",
+                                "dynamodb:UpdateItem",
+                                "dynamodb:DeleteItem"
+                            ],
+                            "Resource": [
+                                "arn:aws:dynamodb:*:${AWS::AccountId}:table/loan-requests"
+                            ]
+                        }
+                    ]
+                }
+
